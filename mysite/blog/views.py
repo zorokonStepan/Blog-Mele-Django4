@@ -1,11 +1,12 @@
 from django.http import HttpRequest, HttpResponse
+from django.views.decorators.http import require_POST
 from django.shortcuts import render, get_object_or_404
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.core.mail import send_mail
 from django.conf import settings
 
 from .models import Post
-from .forms import EmailPostForm
+from .forms import EmailPostForm, CommentForm
 
 
 def post_list(request: HttpRequest) -> HttpResponse:
@@ -31,10 +32,15 @@ def post_detail(request: HttpRequest, year: int, month: int, day: int, post: str
                              publish__year=year,
                              publish__month=month,
                              publish__day=day)
-    return render(request, 'blog/post/detail.html', {'post': post})
+
+    comments = post.comments.filter(active=True)
+
+    form = CommentForm()
+
+    return render(request, 'blog/post/detail.html', {'post': post, 'comments': comments, 'form': form})
 
 
-def post_share(request, post_id: int):
+def post_share(request, post_id: int) -> HttpResponse:
     post = get_object_or_404(Post, id=post_id, status=Post.Status.PUBLISHED)
 
     sent = False
@@ -57,3 +63,21 @@ def post_share(request, post_id: int):
         form = None
 
     return render(request, 'blog/post/share.html', {'post': post, 'form': form, 'sent': sent})
+
+
+@require_POST
+def post_comment(request, post_id) -> HttpResponse:
+    post = get_object_or_404(Post, id=post_id, status=Post.Status.PUBLISHED)
+    comment = None
+    # Comment has been posted
+    form = CommentForm(data=request.POST)
+
+    if form.is_valid():
+        # Create a Comment class object without storing it in the database
+        comment = form.save(commit=False)
+        # Assign post to comment
+        comment.post = post
+        # Save comment to database
+        comment.save()
+
+    return render(request, 'blog/post/comment.html', {'post': post, 'form': form, 'comment': comment})
